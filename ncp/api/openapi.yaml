@@ -1,0 +1,1062 @@
+openapi: 3.0.3
+info:
+  title: NetControl Plane API
+  version: 1.0.0
+  description: HTTP API for intents, plans, reachability, drift and background jobs.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: intents
+  - name: plans
+  - name: audits
+  - name: reachability
+  - name: drift
+  - name: jobs
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+  parameters:
+    IntentIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Intent identifier.
+    PlanIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Plan identifier.
+    JobIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Job identifier.
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - UNAUTHENTICATED
+            - INVALID_ARGUMENT
+            - NOT_FOUND
+            - CONFLICT
+            - GUARDRAIL_DENIED
+            - INTERNAL
+        details:
+          type: object
+          additionalProperties: true
+    HealthResponse:
+      type: object
+      required: [status, db]
+      properties:
+        status:
+          type: string
+          example: ok
+        db:
+          type: string
+          example: up
+    IntentCreateRequest:
+      type: object
+      required: [key, title, ownerTeam]
+      properties:
+        key:
+          type: string
+          example: demo.svc-a-to-svc-b
+        title:
+          type: string
+          example: svc-a to svc-b
+        ownerTeam:
+          type: string
+          example: payments
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    IntentCreatedResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    WorkloadRef:
+      type: object
+      required: [cluster, namespace, selector]
+      properties:
+        cluster:
+          type: string
+          example: c1
+        namespace:
+          type: string
+          example: payments
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            app: svc-a
+    ServiceRef:
+      type: object
+      required: [cluster, namespace, name]
+      properties:
+        cluster:
+          type: string
+          example: c1
+        namespace:
+          type: string
+          example: payments
+        name:
+          type: string
+          example: svc-b
+    Destination:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [service, cidr, fqdn]
+        service:
+          $ref: '#/components/schemas/ServiceRef'
+        cidr:
+          type: string
+          example: 10.0.0.0/16
+        fqdn:
+          type: string
+          example: api.example.com
+    Rule:
+      type: object
+      required: [direction, protocol, ports]
+      properties:
+        direction:
+          type: string
+          enum: [ingress, egress, both]
+        protocol:
+          type: string
+          enum: [TCP, UDP]
+        ports:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+            minimum: 1
+            maximum: 65535
+    Constraints:
+      type: object
+      properties:
+        ttlSeconds:
+          type: integer
+          minimum: 0
+        approvalRequired:
+          type: boolean
+    Owner:
+      type: object
+      required: [team]
+      properties:
+        team:
+          type: string
+        createdBy:
+          type: string
+        ticketRef:
+          type: string
+        justification:
+          type: string
+    IntentSpec:
+      type: object
+      required: [envs, owner, subject, destinations, rules]
+      properties:
+        envs:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        owner:
+          $ref: '#/components/schemas/Owner'
+        subject:
+          $ref: '#/components/schemas/WorkloadRef'
+        destinations:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Destination'
+        rules:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Rule'
+        constraints:
+          $ref: '#/components/schemas/Constraints'
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    CreateRevisionRequest:
+      type: object
+      required: [ticketRef, justification, spec]
+      properties:
+        ticketRef:
+          type: string
+          example: JIRA-123
+        justification:
+          type: string
+          example: Temporary access for incident response
+        ttlSeconds:
+          type: integer
+          minimum: 0
+        spec:
+          $ref: '#/components/schemas/IntentSpec'
+    CreateRevisionResponse:
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+    IntentResponse:
+      type: object
+      required: [id, key, title, ownerTeam, status, labels, createdBy]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        title:
+          type: string
+        ownerTeam:
+          type: string
+        status:
+          type: string
+        currentRevision:
+          type: integer
+          nullable: true
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        createdBy:
+          type: string
+    RevisionItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        revision:
+          type: integer
+        state:
+          type: string
+        ticketRef:
+          type: string
+        justification:
+          type: string
+        ttlSeconds:
+          type: integer
+          nullable: true
+        notAfterUnix:
+          type: integer
+          format: int64
+          nullable: true
+        createdBy:
+          type: string
+        createdAtUnix:
+          type: integer
+          format: int64
+    RevisionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevisionItem'
+    PlanCreateResponse:
+      type: object
+      required: [planId]
+      properties:
+        planId:
+          type: string
+          format: uuid
+    PlanApplyResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+    PlanResponse:
+      type: object
+      required: [id, intentId, revisionId, status, diff, blast, artifacts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        intentId:
+          type: string
+          format: uuid
+        revisionId:
+          type: integer
+          format: int64
+        status:
+          type: string
+        diff:
+          type: object
+          additionalProperties: true
+        blast:
+          type: object
+          additionalProperties: true
+        artifacts:
+          type: object
+          additionalProperties: true
+    AuditItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        atUnix:
+          type: integer
+          format: int64
+        actor:
+          type: string
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        meta:
+          type: object
+          additionalProperties: true
+    AuditListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditItem'
+    ReachabilityResponse:
+      type: object
+      required: [verdict, why]
+      properties:
+        verdict:
+          type: string
+          enum: [allowed, denied, unknown]
+        why:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    DriftSnapshot:
+      type: object
+      required: [id, atUnix, scope, status, desiredHash, observedHash, details]
+      properties:
+        id:
+          type: string
+          format: uuid
+        atUnix:
+          type: integer
+          format: int64
+        scope:
+          type: string
+        status:
+          type: string
+          enum: [ok, drift, unknown]
+        desiredHash:
+          type: string
+        observedHash:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    DriftListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriftSnapshot'
+    DriftReconcileResponse:
+      type: object
+      required: [status, jobId]
+      properties:
+        status:
+          type: string
+          example: queued
+        jobId:
+          type: string
+          format: uuid
+    JobResponse:
+      type: object
+      required: [id, kind, status, payload, createdAtUnix, runAtUnix, ageSeconds]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        status:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        createdAtUnix:
+          type: integer
+          format: int64
+        runAtUnix:
+          type: integer
+          format: int64
+        ageSeconds:
+          type: integer
+          format: int64
+        lastError:
+          type: string
+        lockedBy:
+          type: string
+        lockedAtUnix:
+          type: integer
+          format: int64
+paths:
+  /health:
+    get:
+      tags: [health]
+      security: []
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service and DB are reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /intents:
+    post:
+      tags: [intents]
+      summary: Create intent
+      operationId: createIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentCreateRequest'
+      responses:
+        '200':
+          description: Intent created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentCreatedResponse'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /intents/{id}:
+    get:
+      tags: [intents]
+      summary: Get intent by id
+      operationId: getIntent
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+      responses:
+        '200':
+          description: Intent found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentResponse'
+        '400':
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Intent not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /intents/{id}/revisions:
+    post:
+      tags: [intents]
+      summary: Create revision
+      operationId: createRevision
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRevisionRequest'
+      responses:
+        '200':
+          description: Revision created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRevisionResponse'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Intent not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Guardrail denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [intents]
+      summary: List revisions
+      operationId: listRevisions
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+      responses:
+        '200':
+          description: Revisions list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevisionListResponse'
+        '400':
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Intent not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /intents/{id}/plan:
+    post:
+      tags: [plans]
+      summary: Create plan for intent revision
+      operationId: createPlan
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Revision number.
+      responses:
+        '200':
+          description: Plan created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanCreateResponse'
+        '400':
+          description: Invalid id or revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Intent or revision not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /plans/{id}:
+    get:
+      tags: [plans]
+      summary: Get plan
+      operationId: getPlan
+      parameters:
+        - $ref: '#/components/parameters/PlanIdPath'
+      responses:
+        '200':
+          description: Plan found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanResponse'
+        '400':
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Plan not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /plans/{id}/apply:
+    post:
+      tags: [plans]
+      summary: Enqueue apply job for plan
+      operationId: applyPlan
+      parameters:
+        - $ref: '#/components/parameters/PlanIdPath'
+      responses:
+        '200':
+          description: Apply request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanApplyResponse'
+        '400':
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Plan not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /plans/{id}/artifacts/k8s.yaml:
+    get:
+      tags: [plans]
+      summary: Render plan artifact as Kubernetes YAML
+      operationId: getPlanK8sArtifact
+      parameters:
+        - $ref: '#/components/parameters/PlanIdPath'
+      responses:
+        '200':
+          description: YAML document.
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+        '400':
+          description: Invalid id or artifact data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Plan not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /audits:
+    get:
+      tags: [audits]
+      summary: List audit log
+      operationId: listAudits
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Audit entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditListResponse'
+        '400':
+          description: Invalid query params.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reachability:
+    get:
+      tags: [reachability]
+      summary: Check reachability
+      operationId: checkReachability
+      parameters:
+        - name: intentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional intent scope. If omitted, global search mode is used.
+        - name: revision
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional revision. Allowed only when intentId is provided.
+        - name: fromNamespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: fromSelector
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated key/value pairs in k=v format.
+        - name: toNamespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: toService
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: port
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+        - name: protocol
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [TCP, UDP]
+            default: TCP
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [egress, ingress, both]
+            default: egress
+      responses:
+        '200':
+          description: Reachability verdict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReachabilityResponse'
+        '400':
+          description: Invalid query params.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Intent or revision not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /drift:
+    get:
+      tags: [drift]
+      summary: List drift snapshots
+      operationId: listDrift
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Drift snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftListResponse'
+        '400':
+          description: Invalid query params.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /drift/reconcile:
+    post:
+      tags: [drift]
+      summary: Enqueue drift reconcile job
+      operationId: reconcileDrift
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: dryRun
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '202':
+          description: Reconcile job enqueued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftReconcileResponse'
+        '400':
+          description: Invalid query params.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{id}:
+    get:
+      tags: [jobs]
+      summary: Get job by id
+      operationId: getJob
+      parameters:
+        - $ref: '#/components/parameters/JobIdPath'
+      responses:
+        '200':
+          description: Job found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          description: Invalid id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
